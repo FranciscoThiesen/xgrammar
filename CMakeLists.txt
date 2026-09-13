@@ -16,6 +16,7 @@ endif()
 
 option(XGRAMMAR_BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
 option(XGRAMMAR_BUILD_CXX_TESTS "Build C++ tests" OFF)
+option(XGRAMMAR_BUILD_CXX_BENCHMARKS "Build C++ benchmarks" OFF)
 option(XGRAMMAR_ENABLE_CPPTRACE
        "Enable C++ trace (Now only support Linux, and RelWithDebugInfo or Debug build)" OFF
 )
@@ -42,6 +43,7 @@ endif()
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Build Python bindings: ${XGRAMMAR_BUILD_PYTHON_BINDINGS}")
 message(STATUS "Build C++ tests: ${XGRAMMAR_BUILD_CXX_TESTS}")
+message(STATUS "Build C++ benchmarks: ${XGRAMMAR_BUILD_CXX_BENCHMARKS}")
 message(STATUS "CUDA architectures: ${XGRAMMAR_CUDA_ARCHITECTURES}")
 message(STATUS "Enable C++ trace: ${XGRAMMAR_ENABLE_CPPTRACE}")
 
@@ -126,6 +128,12 @@ if(XGRAMMAR_BUILD_CXX_TESTS)
 
   include(GoogleTest)
   gtest_discover_tests(xgrammar_test)
+endif()
+
+if(XGRAMMAR_BUILD_CXX_BENCHMARKS)
+  add_executable(bench_mask_gen ${PROJECT_SOURCE_DIR}/examples/benchmark/cpp/bench_mask_gen.cc)
+  target_include_directories(bench_mask_gen PUBLIC ${PROJECT_SOURCE_DIR}/cpp)
+  target_link_libraries(bench_mask_gen xgrammar)
 endif()
 
 if(XGRAMMAR_ENABLE_COVERAGE)
