@@ -132,6 +132,14 @@ class GrammarMatcherForTokenMaskCache : public EarleyParser {
 
   std::optional<RuleLevelCache> rule_level_cache_;
 
+  // Cached expansion of the lookahead assertion's start state. The closure depends only on
+  // the lookahead assertion id, not on the parser stack below it (the state is pushed with
+  // rule_id -1 and kNoPrevInputPos), so it is the same for every token of the vocabulary
+  // walk. Computing it once and replaying the row removes one Earley closure per token.
+  int32_t lookahead_expansion_rule_id_ = -1;
+  std::vector<ParserState> lookahead_expansion_states_;
+  bool lookahead_expansion_completed_ = false;
+
   // Temporary data for GetAdaptiveTokenMask.
   std::vector<int32_t> tmp_accepted_indices_;
   std::vector<int32_t> tmp_rejected_indices_;
@@ -318,14 +326,36 @@ std::pair<bool, bool> GrammarMatcherForTokenMaskCache::IsTokenPassLookaheadAsser
   if (lookahead_assertion_id == -1) {
     return {accepted, can_reach_end};
   }
-  auto lookahead_state =
-      ParserState(/*rule_id*/ -1, lookahead_assertion_id, 0, ParserState::kNoPrevInputPos, 0);
-  PushStateAndExpand(lookahead_state);
   int token_len = token.size();
-  if (IsCompleted()) {
-    // If the lookahead assertion is already completed, we can accept the token.
-    PopLastStates(1);
-    return {accepted, can_reach_end};
+  // The expansion of the lookahead start state is identical for every token, so compute it
+  // once and push the resulting row directly afterwards. With a character budget the row
+  // carries budget bookkeeping that PushStatesToCheck does not reproduce, so that case keeps
+  // expanding per token.
+  if (!has_char_budget_rules_) {
+    if (lookahead_expansion_rule_id_ != lookahead_assertion_id) {
+      auto lookahead_state =
+          ParserState(/*rule_id*/ -1, lookahead_assertion_id, 0, ParserState::kNoPrevInputPos, 0);
+      PushStateAndExpand(lookahead_state);
+      lookahead_expansion_states_ = GetLatestScanableStates();
+      lookahead_expansion_completed_ = IsCompleted();
+      lookahead_expansion_rule_id_ = lookahead_assertion_id;
+      PopLastStates(1);
+    }
+    if (lookahead_expansion_completed_) {
+      // The lookahead assertion is already completed: the token is accepted, and no row was
+      // pushed to roll back.
+      return {accepted, can_reach_end};
+    }
+    PushStatesToCheck(lookahead_expansion_states_, lookahead_expansion_completed_);
+  } else {
+    auto lookahead_state =
+        ParserState(/*rule_id*/ -1, lookahead_assertion_id, 0, ParserState::kNoPrevInputPos, 0);
+    PushStateAndExpand(lookahead_state);
+    if (IsCompleted()) {
+      // If the lookahead assertion is already completed, we can accept the token.
+      PopLastStates(1);
+      return {accepted, can_reach_end};
+    }
   }
 
   // Find all positions that can come to and end. Then check if the suffix from that position
